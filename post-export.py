@@ -3,16 +3,6 @@ import csv
 import os
 from datetime import datetime
 from tqdm import tqdm
-import re
-
-
-def contains_shortcode(content):
-    """Check if post content includes the [live_feed id=... shortcode."""
-    if not content:
-        return False
-    # Match if '[live_feed id=' is preceded by anything except a-zA-Z0-9_ or at the start of content
-    pattern = r'(?<![\w])\[live_feed id='
-    return re.search(pattern, content) is not None
 
 # Database connection details
 db_config = {
@@ -20,7 +10,7 @@ db_config = {
     "user": "root",
     "password": "root",
     "database": "telegrafi",
-    "connection_timeout": 300
+    "connection_timeout": 300,
 }
 
 # SQL query for testing with 100 rows
@@ -38,6 +28,13 @@ SELECT
         END
         ORDER BY t.name ASC SEPARATOR ', '
     ) AS post_category,
+    GROUP_CONCAT(DISTINCT 
+        CASE 
+            WHEN tt.taxonomy = 'category' 
+            THEN t.term_id 
+        END
+        ORDER BY t.term_id ASC SEPARATOR ', '
+    ) AS post_category_ids,
     GROUP_CONCAT(DISTINCT 
         CASE 
             WHEN tt.taxonomy = 'post_tag' 
@@ -163,6 +160,13 @@ SELECT
     ) AS post_category,
     GROUP_CONCAT(DISTINCT 
         CASE 
+            WHEN tt.taxonomy = 'category' 
+            THEN t.term_id 
+        END
+        ORDER BY t.term_id ASC SEPARATOR ', '
+    ) AS post_category_ids,
+    GROUP_CONCAT(DISTINCT 
+        CASE 
             WHEN tt.taxonomy = 'post_tag' 
             THEN t.name 
         END
@@ -281,16 +285,14 @@ def test_single_row():
         
         if rows:
             headers = list(rows[0].keys())
-
-            # ✅ Filter only rows that contain the shortcode
-            filtered_rows = [row for row in rows if contains_shortcode(row['content_body'])]
-
+            
+            # Write to CSV
             with open('posts_test.csv', 'w', newline='', encoding='utf-8') as csvfile:
                 writer = csv.DictWriter(csvfile, fieldnames=headers)
                 writer.writeheader()
-                writer.writerows(filtered_rows)
-
-            print(f"Test completed: {len(filtered_rows)} rows with [live_feed id= written to posts_test.csv")
+                writer.writerows(rows)
+            
+            print(f"Test completed: {len(rows)} rows have been written to posts_test.csv")
             return True
         
         return False
@@ -323,34 +325,29 @@ def process_in_batches(batch_size=10000):
         while True:
             cursor.execute(batch_query, (last_id, batch_size))
             rows = cursor.fetchall()
-
+            
             if not rows:
                 break
-
-            # ✅ Filter only rows with the shortcode
-            filtered_rows = [row for row in rows if contains_shortcode(row['content_body'])]
-
-            if filtered_rows:
-                filename = f'live-feed_posts_{file_counter}.csv'
-                with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
-                    writer = csv.DictWriter(csvfile, fieldnames=filtered_rows[0].keys())
-                    writer.writeheader()
-                    writer.writerows(filtered_rows)
-
-                batch_count = len(filtered_rows)
-                total_processed += batch_count
-
-                print(f"\nBatch {file_counter}:")
-                print(f"- Wrote {batch_count:,} matching rows to {filename}")
-                print(f"- Total matched so far: {total_processed:,}")
-                print(f"- Last ID processed: {rows[-1]['post_id']}")
-
-            else:
-                print(f"Batch {file_counter} skipped (no matching posts)")
-
+                
+            # Write batch to CSV
+            filename = f'posts_catID_{file_counter}.csv'
+            with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=rows[0].keys())
+                writer.writeheader()
+                writer.writerows(rows)
+            
+            batch_count = len(rows)
+            total_processed += batch_count
+            
+            print(f"\nBatch {file_counter}:")
+            print(f"- Wrote {batch_count:,} rows to {filename}")
+            print(f"- Total processed: {total_processed:,} of {total_posts:,} posts")
+            print(f"- Progress: {(total_processed/total_posts)*100:.2f}%")
+            print(f"- Last ID processed: {rows[-1]['post_id']}")
+            
             last_id = rows[-1]['post_id']
             file_counter += 1
-
+        
         print("\nProcessing complete!")
         print(f"Total files created: {file_counter-1}")
         print(f"Total rows processed: {total_processed:,}")

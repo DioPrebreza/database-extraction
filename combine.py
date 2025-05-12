@@ -1,5 +1,15 @@
 import os
 import csv
+import sys
+
+# Increase CSV field size limit
+maxInt = sys.maxsize
+while True:
+    try:
+        csv.field_size_limit(maxInt)
+        break
+    except OverflowError:
+        maxInt = int(maxInt/10)
 
 # Function to combine CSV files
 def combine_csv(files, output_file):
@@ -29,13 +39,13 @@ def combine_csv(files, output_file):
 
 # List of CSV files to combine
 csv_files = [
-    "posts_1.csv",
-    "posts_2.csv",
-    "posts_3.csv",
+    "livefeed_posts_1.csv",
+    "livefeed_posts_2.csv",
+    
 ]
 
 # Output file where the combined data will be saved
-output_csv = "posts.csv"
+output_csv = "livefeed_all.csv"
 
 # Call the function to combine the files
 combine_csv(csv_files, output_csv)
