@@ -2,3 +2,5 @@
 *.csv
 .~lock.*#
 venv/
+*.zip
+*.rar
