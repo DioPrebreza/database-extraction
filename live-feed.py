@@ -5,20 +5,6 @@ from datetime import datetime
 from tqdm import tqdm
 import re
 
-
-def extract_shortcode(content):
-    """Extract the [live_feed id=...] shortcode from the post content."""
-    if not content:
-        return None
-    # Match the shortcode pattern
-    pattern = r'\[live_feed id="(\d+)"\]'
-    match = re.search(pattern, content)
-    return match.group(0) if match else None
-
-def contains_shortcode(content):
-    """Check if post content includes the [live_feed id=...] shortcode."""
-    return extract_shortcode(content) is not None
-
 # Database connection details
 db_config = {
     "host": "localhost",
@@ -43,13 +29,22 @@ SELECT
         END
         ORDER BY t.name ASC SEPARATOR ', '
     ) AS post_category,
-    GROUP_CONCAT(DISTINCT 
-        CASE 
-            WHEN tt.taxonomy = 'post_tag' 
-            THEN t.name 
-        END
-        ORDER BY t.name ASC SEPARATOR ', '
+    (
+        SELECT t.name
+        FROM wp_terms t
+        INNER JOIN wp_term_taxonomy tt ON t.term_id = tt.term_id
+        INNER JOIN wp_term_relationships tr ON tt.term_taxonomy_id = tr.term_taxonomy_id
+        WHERE tr.object_id = p.ID AND tt.taxonomy = 'livefeed_tag'
+        LIMIT 1
     ) AS tags,
+    (
+        SELECT t.term_id
+        FROM wp_terms t
+        INNER JOIN wp_term_taxonomy tt ON t.term_id = tt.term_id
+        INNER JOIN wp_term_relationships tr ON tt.term_taxonomy_id = tr.term_taxonomy_id
+        WHERE tr.object_id = p.ID AND tt.taxonomy = 'livefeed_tag'
+        LIMIT 1
+    ) AS tag_id,
     COALESCE(
         (SELECT wp.guid 
          FROM wp_posts wp 
@@ -175,9 +170,9 @@ def process_in_batches(batch_size=10000):
             if not rows:
                 break
 
-            # Add shortcode column to every row (even if it's None)
+            # Generate shortcode based on tag_id
             for row in rows:
-                row['shortcode'] = extract_shortcode(row['content_body'])
+                row['shortcode'] = f'[live_feed id="{row["tag_id"]}"]' if row.get('tag_id') else ''
 
             if rows:
                 filename = f'livefeed_posts_{file_counter}.csv'
